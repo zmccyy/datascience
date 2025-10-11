@@ -1,0 +1,311 @@
+这是一个关于人力资源数据分析的Python脚本，使用了多种数据科学和机器学习技术来分析和预测员工离职情况。下面是对代码的详细解释：
+
+1. 导入库
+python
+from typing import Any
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+from pandas import Series, DataFrame
+import matplotlib
+import joblib
+from sklearn.linear_model import LinearRegression
+from sklearn import model_selection
+from sklearn.tree._export import export_text
+from sklearn import metrics
+from sklearn import tree
+from sklearn import preprocessing
+from sklearn.decomposition import PCA
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+from sklearn import metrics
+from sklearn import svm
+from sklearn.cluster import KMeans
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegression
+import scienceplots
+import seaborn as sns
+导入了数据处理（pandas, numpy）、可视化（matplotlib, seaborn）和机器学习（scikit-learn）相关的库
+
+scienceplots 用于科学论文风格的绘图
+
+typing 用于类型注解
+
+2. 绘图设置
+python
+plt.style.use('science')
+plt.rcParams.update({"text.usetex": False})  # 禁用 LaTeX
+plt.rcParams["font.sans-serif"] = ["SimHei"]
+plt.rcParams["axes.unicode_minus"] = False
+设置绘图风格为科学论文风格
+
+配置中文字体支持（SimHei为黑体）
+
+解决负号显示问题
+
+3. 数据加载与初步探索
+python
+data: pd.DataFrame = pd.read_csv('HR_datascience.csv')
+data.head()
+data.shape
+读取HR数据集并显示前几行
+
+查看数据形状（行数和列数）
+
+4. 数据清洗
+python
+# 查看是否有重复列
+data.duplicated().sum()
+
+# 删除重复行
+data = data.drop_duplicates().reset_index().drop('index', axis=1)
+
+# 查看有无缺失列
+data.isna().sum()
+检查并删除重复行
+
+检查缺失值
+
+5. 数据可视化
+薪水分布饼图
+python
+df_salary = data['salary'].value_counts()
+colors = ['#88bdf8', '#94dcc3', '#eef6ae']
+fig: plt.Figure = plt.figure(figsize=(10, 8))
+ax1: plt.Axes = fig.add_subplot(111)
+ax1.pie(x=df_salary, labels=df_salary.index, autopct='%.2f%%', 
+        textprops={'fontsize': 18}, colors=colors, explode=[0, 0.0, 0.2])
+plt.savefig('figure1.svg')
+plt.show()
+创建薪水分布的饼图，突出显示某一类别
+
+箱型图分析
+python
+data_box_filtered = ['satisfaction_level', 'last_evaluation', 'number_project',
+                     'average_montly_hours', 'time_spend_company', 'Work_accident',
+                     'promotion_last_5years']
+df2 = data[data_box_filtered]
+
+plt.cla()
+fig2: plt.Figure = plt.figure(figsize=(15, 8))
+colors = ['pink', 'lightblue', 'lightgreen', 'red', 'purple', 'orange', 'yellow']
+for i in range(1, 8):
+    ax: plt.Axes = fig2.add_subplot(3, 3, i)
+    ax.boxplot(x=df2[data_box_filtered[i-1]], patch_artist=True,
+               boxprops={'facecolor': colors[i-1]})
+    ax.set_title(data_box_filtered[i-1], fontsize=15)
+plt.tight_layout()
+plt.savefig('figure2.svg')
+plt.show()
+为7个数值特征创建箱型图，检查异常值和数据分布
+
+配对图
+python
+plt.cla()
+sns.pairplot(data, hue='left', kind='reg', diag_kind='kde')
+plt.savefig('figure3_png.png', dpi=300)
+plt.show()
+使用seaborn创建配对图，按离职情况着色，显示变量间的关系
+
+6. 数据预处理
+python
+# 独热编码分类变量
+dumm_Department = pd.get_dummies(data['Department'], prefix='Department').astype(int)
+dumm_Salary = pd.get_dummies(data['salary'], prefix='salary').astype('int')
+dropped = data.drop(['Department', 'salary'], axis=1)
+data_new = dropped.join([dumm_Department, dumm_Salary], how='outer')
+对部门(Department)和薪水(salary)列进行独热编码
+
+创建新的数据集
+
+7. 相关性分析
+python
+plt.cla()
+fig3 = plt.figure(figsize=(10, 8))
+corr = data_new.corr()
+sns.heatmap(corr, annot=True, cmap='rainbow', fmt='.2f')
+plt.savefig('figure4.svg')
+plt.show()
+计算并可视化特征间的相关性热力图
+
+8. 数据准备与标准化
+python
+X = data_new.drop('left', axis=1)
+y = data_new['left'].astype(int)
+X_train, X_test, y_train, y_test = model_selection.train_test_split(
+    X, y, test_size=0.2, random_state=42)
+
+# 对数值列进行标准化
+numerical_columns = ['satisfaction_level', 'last_evaluation', 'number_project',
+                     'average_montly_hours', 'time_spend_company']
+scaler = StandardScaler()
+X_train[numerical_columns] = scaler.fit_transform(X_train[numerical_columns])
+X_test[numerical_columns] = scaler.transform(X_test[numerical_columns])
+划分特征和目标变量
+
+对数值特征进行标准化处理
+
+9. 逻辑回归模型
+python
+logreg = LogisticRegression(max_iter=1000, random_state=42)
+logreg.fit(X_train, y_train)
+y_pred = logreg.predict(X_test)
+
+# 评估模型
+class_report = metrics.classification_report(y_test, y_pred)
+conf_matrix = metrics.confusion_matrix(y_test, y_pred)
+
+# 绘制混淆矩阵
+plt.cla()
+fig4: plt.Figure = plt.figure(figsize=(10, 8))
+display = ConfusionMatrixDisplay(confusion_matrix=conf_matrix, display_labels=['0', '1'])
+ax1: plt.Axes = fig4.add_subplot(111)
+plt.title('Confusion Matrix')
+ax1.set_xlabel('Predicted Label')
+ax1.set_ylabel('True Label')
+display.plot()
+plt.savefig('figure5.svg')
+plt.show()
+训练逻辑回归模型并评估性能
+
+绘制混淆矩阵可视化结果
+
+10. 随机森林模型
+超参数调优
+python
+# 寻找最优最大深度
+d_scores = []
+for i in range(1, 20):
+    RF = RandomForestClassifier(n_estimators=15, max_depth=i, 
+                               random_state=42, criterion='entropy')
+    RF.fit(X_train, y_train)
+    d_scores.append(RF.score(X_test, y_test))
+depth = d_scores.index(max(d_scores)) + 1
+
+# 寻找最优树数量
+n_scores = []
+for i in range(1, 105):
+    RF = RandomForestClassifier(n_estimators=i, max_depth=14, 
+                               random_state=42, criterion='entropy')
+    RF.fit(X_train, y_train)
+    n_scores.append(RF.score(X_test, y_test))
+n_tree = n_scores.index(max(n_scores)) + 1
+通过网格搜索找到随机森林的最佳超参数
+
+训练最终模型
+python
+rf = RandomForestClassifier(n_estimators=29, max_depth=14, random_state=42)
+rf.fit(X_train, y_train)
+y_pred_rf = rf.predict(X_test)
+
+# 评估模型
+class_report_rf = metrics.classification_report(y_test, y_pred_rf)
+conf_matrix_rf = metrics.confusion_matrix(y_test, y_pred_rf)
+
+# 绘制混淆矩阵
+plt.cla()
+fig5: plt.Figure = plt.figure(figsize=(10, 8))
+display = ConfusionMatrixDisplay(confusion_matrix=conf_matrix_rf, display_labels=['0', '1'])
+ax1: plt.Axes = fig5.add_subplot(111)
+plt.title('Confusion Matrix')
+ax1.set_xlabel('Predicted Label')
+ax1.set_ylabel('True Label')
+display.plot()
+plt.savefig('figure6.svg')
+plt.show()
+11. 特征重要性分析
+python
+feature_importances = rf.feature_importances_
+features_df = pd.DataFrame({
+    'Feature': X_train.columns,
+    'Importance': feature_importances
+})
+features_df = features_df.sort_values(by='Importance', ascending=False)
+
+# 绘制特征重要性图
+plt.cla()
+plt.figure(figsize=(12, 8))
+sns.barplot(x='Importance', y='Feature', data=features_df)
+plt.title('Feature Importance in Random Forest Model')
+plt.xlabel('Importance')
+plt.ylabel('Feature')
+plt.savefig('figure7.svg')
+plt.show()
+分析并可视化哪些特征对预测员工离职最重要
+
+这段代码是一个针对HR员工流失分析的完整数据科学流程，涵盖数据读取、预处理、可视化、特征选择、模型训练与评估。下面详细解释主要部分和关键语句，并说明各.svg和.png图片的含义。
+<hr></hr>
+1. 配置与环境设置
+n_cores = max(1, multiprocessing.cpu_count() - 1)
+获取可用CPU核心数，留一个核心给系统，提升并行处理效率。
+os.environ['OMP_NUM_THREADS'] 和 os.environ['MKL_NUM_THREADS']
+设置OpenMP和MKL库的线程数，优化多线程性能。
+plt.style.use('science')
+使用科学风格的matplotlib绘图主题。
+plt.rcParams["font.sans-serif"] = ["SimHei"]
+设置中文字体，防止中文乱码。
+<hr></hr>
+2. 数据读取与预处理
+load_data_optimized(filepath)
+用指定数据类型读取数据，减少内存占用，只读取需要的列。
+data.drop_duplicates(ignore_index=True)
+去除重复数据，保证数据唯一性。
+data.isna().sum()
+检查缺失值，输出每列缺失数量。
+<hr></hr>
+3. 可视化分析
+生成的图片说明
+figure_left_dist.svg
+饼图，展示员工是否离职（left）的分布比例。
+figure1.svg
+饼图，展示员工薪资（salary）分布。
+figure2.svg
+箱型图，展示各数值型特征（如满意度、工龄等）的分布和异常值。
+figure3_png.png
+配对图（pairplot），展示各特征两两关系及其与离职的关系（hue='left'）。
+figure4.svg
+相关性热力图，展示所有特征之间的相关系数。
+figure5.svg
+逻辑回归模型的混淆矩阵，展示预测与实际的分类对比。
+figure6.svg
+随机森林模型的混淆矩阵。
+figure_roc.svg
+随机森林模型的ROC曲线，衡量模型二分类性能。
+figure7.svg
+随机森林模型的特征重要性条形图，展示最重要的前15个特征。
+<hr></hr>
+4. 特征工程
+pd.get_dummies(data, columns=['Department', 'salary'], dtype=int)
+对类别型特征进行独热编码，便于模型处理。
+select_features_fast(X, y, k=20)
+用SelectKBest快速筛选前20个最相关特征。
+<hr></hr>
+5. 数据标准化
+StandardScaler()
+对数值型特征进行标准化，提升模型收敛速度和效果。
+<hr></hr>
+6. 模型训练与评估
+逻辑回归
+logreg = LogisticRegression(max_iter=1000, random_state=42)
+训练逻辑回归模型，评估并输出分类报告和混淆矩阵。
+随机森林
+quick_evaluate_rf
+用预设参数快速训练随机森林，初步评估。 optimize_rf_fast
+用随机搜索（RandomizedSearchCV）优化超参数，提升模型性能。
+评估与可视化
+metrics.classification_report
+输出精确率、召回率、F1分数等。 metrics.confusion_matrix
+生成混淆矩阵。 roc_curve, auc
+计算并绘制ROC曲线，衡量模型二分类能力。 feature_importances_
+获取特征重要性，绘制条形图。
+<hr></hr>
+7. 并行绘图
+plot_boxplots_parallel
+利用joblib并行绘制多个箱型图，加快绘图速度。
+<hr></hr>
+8. 计时器
+@contextmanager def timer(name):
+统计每个主要步骤的耗时，便于性能分析。
+<hr></hr>
+总结
+本代码实现了HR员工流失分析的全流程，自动生成多种可视化图片（.svg和.png），帮助理解数据分布、特征关系、模型表现和特征重要性。关键语句均有注释，便于理解和扩展。

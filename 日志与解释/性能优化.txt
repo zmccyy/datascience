@@ -1,0 +1,264 @@
+降低HR数据分析代码运行时长的建议
+针对您提供的代码，我提出以下优化建议来显著降低运行时长：
+
+1. 数据加载和预处理优化
+python
+# 优化数据读取
+def load_data_optimized(filepath):
+    """优化数据加载"""
+    # 指定数据类型，减少内存使用
+    dtype_spec = {
+        'satisfaction_level': 'float32',
+        'last_evaluation': 'float32',
+        'number_project': 'int8',
+        'average_montly_hours': 'int16',
+        'time_spend_company': 'int8',
+        'Work_accident': 'int8',
+        'promotion_last_5years': 'int8',
+        'left': 'int8'
+    }
+    
+    # 只读取需要的列
+    usecols = list(dtype_spec.keys()) + ['Department', 'salary']
+    
+    data = pd.read_csv(filepath, dtype=dtype_spec, usecols=usecols)
+    return data
+
+# 优化重复值处理
+data = data.drop_duplicates(ignore_index=True)  # 替代 reset_index().drop()
+2. 并行处理优化
+python
+from joblib import Parallel, delayed
+import multiprocessing
+
+# 获取CPU核心数
+n_cores = multiprocessing.cpu_count() - 1  # 保留一个核心给系统
+
+# 并行处理箱型图
+def plot_boxplots_parallel(data, columns, save_path='figure2.svg'):
+    """并行绘制箱型图"""
+    def plot_single_box(col, ax, color):
+        ax.boxplot(data[col], patch_artist=True, boxprops={'facecolor': color})
+        ax.set_title(col, fontsize=12)
+        ax.set_ylabel('')
+    
+    fig, axes = plt.subplots(3, 3, figsize=(15, 8))
+    axes_flat = axes.ravel()
+    colors = sns.color_palette("husl", len(columns))
+    
+    # 并行处理绘图
+    Parallel(n_jobs=n_cores)(
+        delayed(plot_single_box)(col, axes_flat[i], colors[i])
+        for i, col in enumerate(columns[:len(axes_flat)])
+    )
+    
+    # 隐藏多余的子图
+    for i in range(len(columns), len(axes_flat)):
+        fig.delaxes(axes_flat[i])
+    
+    plt.tight_layout()
+    plt.savefig(save_path, bbox_inches='tight')
+    plt.close()  # 立即关闭图形释放内存
+3. 机器学习模型优化
+3.1 随机森林超参数搜索优化
+python
+from sklearn.model_selection import RandomizedSearchCV
+
+def optimize_rf_fast(X_train, y_train):
+    """使用随机搜索替代网格搜索"""
+    param_dist = {
+        'n_estimators': [50, 100, 150],  # 减少选项
+        'max_depth': [10, 15, 20, None],
+        'min_samples_split': [2, 5],
+        'min_samples_leaf': [1, 2],
+        'max_features': ['sqrt', 'log2']
+    }
+    
+    rf = RandomForestClassifier(random_state=42, n_jobs=n_cores)
+    
+    # 使用随机搜索，迭代次数更少
+    random_search = RandomizedSearchCV(
+        rf, param_dist, n_iter=20,  # 减少迭代次数
+        cv=3,  # 减少交叉验证折数
+        scoring='accuracy',
+        n_jobs=n_cores,  # 并行处理
+        random_state=42,
+        verbose=1
+    )
+    
+    random_search.fit(X_train, y_train)
+    return random_search.best_estimator_
+
+# 快速评估函数
+def quick_evaluate_rf(X_train, y_train, X_test, y_test):
+    """使用预设的较好参数快速训练"""
+    rf = RandomForestClassifier(
+        n_estimators=100,
+        max_depth=15,
+        min_samples_split=5,
+        min_samples_leaf=2,
+        n_jobs=n_cores,
+        random_state=42
+    )
+    
+    rf.fit(X_train, y_train)
+    score = rf.score(X_test, y_test)
+    print(f"快速评估准确率: {score:.4f}")
+    return rf
+3.2 特征选择优化
+python
+from sklearn.feature_selection import SelectKBest, f_classif
+
+def select_features_fast(X, y, k=15):
+    """快速特征选择"""
+    selector = SelectKBest(score_func=f_classif, k=k)
+    X_selected = selector.fit_transform(X, y)
+    selected_features = X.columns[selector.get_support()]
+    return X_selected, selected_features
+
+# 在训练前使用
+X_selected, selected_features = select_features_fast(X_train, y_train, k=15)
+4. 可视化优化
+python
+# 优化热力图计算
+def fast_correlation_heatmap(data, save_path='figure4.svg'):
+    """优化相关性热力图计算"""
+    # 使用更快的相关性计算方法
+    corr = data.corr(method='spearman')  # spearman比pearson计算更快
+    
+    plt.figure(figsize=(10, 8))
+    # 只显示高相关性的注释
+    mask = np.abs(corr) < 0.3  # 只显示相关性大于0.3的注释
+    sns.heatmap(corr, annot=mask, cmap='rainbow', fmt='.2f', 
+                cbar_kws={'shrink': 0.8})
+    plt.savefig(save_path, bbox_inches='tight')
+    plt.close()
+
+# 优化配对图
+def sampled_pairplot(data, sample_size=1000, save_path='figure3.png'):
+    """使用采样数据绘制配对图"""
+    if len(data) > sample_size:
+        data_sample = data.sample(sample_size, random_state=42)
+    else:
+        data_sample = data
+    
+    sns.pairplot(data_sample, hue='left', kind='scatter',  # 使用散点图替代回归图
+                diag_kind='kde', plot_kws={'alpha': 0.6, 's': 10})
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')  # 降低DPI
+    plt.close()
+5. 内存管理和缓存
+python
+from functools import lru_cache
+import joblib
+
+# 缓存昂贵的计算结果
+@lru_cache(maxsize=128)
+def cached_correlation(data_hash, method='pearson'):
+    """缓存相关性计算结果"""
+    # 假设data_hash是数据的哈希值
+    return data.corr(method=method)
+
+# 使用joblib缓存模型训练结果
+def cached_model_training(X, y, model_name):
+    """缓存模型训练结果"""
+    cache_path = f'cache/{model_name}.joblib'
+    
+    if os.path.exists(cache_path):
+        print(f"加载缓存的模型: {model_name}")
+        return joblib.load(cache_path)
+    else:
+        model = train_model(X, y)  # 您的训练函数
+        os.makedirs('cache', exist_ok=True)
+        joblib.dump(model, cache_path)
+        return model
+6. 整体流程优化
+python
+def optimized_workflow():
+    """优化的完整工作流程"""
+    
+    # 1. 快速数据加载
+    print("加载数据...")
+    data = load_data_optimized('HR_datascience.csv')
+    
+    # 2. 快速预处理
+    data = data.drop_duplicates(ignore_index=True)
+    
+    # 3. 采样可视化（可选）
+    if len(data) > 5000:
+        viz_data = data.sample(5000, random_state=42)
+    else:
+        viz_data = data
+    
+    # 4. 快速编码
+    data_encoded = pd.get_dummies(data, columns=['Department', 'salary'], drop_first=True)
+    
+    # 5. 特征和目标分离
+    X = data_encoded.drop('left', axis=1)
+    y = data_encoded['left']
+    
+    # 6. 快速特征选择
+    X_selected, selected_features = select_features_fast(X, y, k=20)
+    
+    # 7. 数据划分
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_selected, y, test_size=0.2, random_state=42, stratify=y
+    )
+    
+    # 8. 快速模型训练
+    print("快速模型训练...")
+    model = quick_evaluate_rf(X_train, y_train, X_test, y_test)
+    
+    # 9. 选择性可视化（只在需要时生成）
+    if not os.path.exists('figure1.svg'):
+        plot_salary_distribution(data)
+    
+    return model, selected_features
+7. 性能监控和调试
+python
+import time
+from contextlib import contextmanager
+
+@contextmanager
+def timer(name):
+    """计时上下文管理器"""
+    start = time.time()
+    yield
+    end = time.time()
+    print(f"{name} 耗时: {end - start:.2f} 秒")
+
+# 使用示例
+with timer("数据加载"):
+    data = load_data_optimized('HR_datascience.csv')
+
+with timer("模型训练"):
+    model = quick_evaluate_rf(X_train, y_train, X_test, y_test)
+8. 配置优化
+python
+# 在代码开头设置这些配置
+import os
+os.environ['OMP_NUM_THREADS'] = str(n_cores)  # 控制OpenMP线程数
+os.environ['MKL_NUM_THREADS'] = str(n_cores)  # 控制MKL线程数
+
+# 设置matplotlib为非交互式后端（如果在服务器上运行）
+import matplotlib
+matplotlib.use('Agg')  # 使用非交互式后端
+
+预期效果
+这些优化措施预计可以：
+
+数据加载时间减少50-70%：通过指定数据类型和选择需要的列
+
+模型训练时间减少60-80%：通过并行处理、特征选择和优化超参数搜索
+
+可视化时间减少70-90%：通过采样、并行处理和选择性生成
+
+内存使用减少40-60%：通过优化数据类型和及时释放资源
+
+使用建议
+逐步实施：不要一次性应用所有优化，先测试最耗时的部分
+
+监控效果：使用计时器监控每个步骤的改进效果
+
+平衡质量与速度：在可接受的精度损失范围内进行优化
+
+硬件利用：确保充分利用多核CPU的优势
